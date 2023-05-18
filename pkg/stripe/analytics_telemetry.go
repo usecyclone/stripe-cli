@@ -262,16 +262,23 @@ func (a *AnalyticsTelemetryClient) SendEvent(ctx context.Context, eventName stri
 }
 
 func (a *AnalyticsTelemetryClient) SendArgv(data url.Values) {
+	argv := strings.Split(data.Get("command_path"), " ")
 	json := a.getPayloadTemplate()
+	// Duplicate to be compatible with both PostHog and Convex code logic
+	json["source"] = "argv"
+	json["argv"] = argv
 	metadata := json["metadata"].(map[string]interface{})
 	metadata["source"] = "argv"
-	metadata["argv"] = data.Get("command_path")
+	metadata["argv"] = argv
 
 	a.SendJSON(json)
 }
 
 func (a *AnalyticsTelemetryClient) SendCli(data string, source string) {
 	json := a.getPayloadTemplate()
+	// Duplicate to be compatible with both PostHog and Convex code logic
+	json["source"] = source
+	json["data"] = data
 	metadata := json["metadata"].(map[string]interface{})
 	metadata["source"] = source
 	metadata["data"] = data
