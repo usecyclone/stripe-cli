@@ -208,7 +208,7 @@ func (a *AnalyticsTelemetryClient) getPayloadTemplate() map[string]interface{} {
 	return json
 }
 
-func (a *AnalyticsTelemetryClient) sendJSON(json map[string]interface{}) {
+func (a *AnalyticsTelemetryClient) SendJSON(json map[string]interface{}) {
 	// FIXME: handling key not found errors
 	metadata, _ := json["metadata"].(map[string]interface{})
 	source, ok := metadata["source"].(string)
@@ -248,12 +248,7 @@ func (a *AnalyticsTelemetryClient) SendEvent(ctx context.Context, eventName stri
 
 		println("SendEvent data", data.Encode())
 
-		json := a.getPayloadTemplate()
-		metadata := json["metadata"].(map[string]interface{})
-		metadata["source"] = "argv"
-		metadata["argv"] = data.Get("command_path")
-
-		a.sendJSON(json)
+		a.SendArgv(data)
 
 		resp, err := a.sendData(ctx, data)
 		// Don't throw exception if we fail to send the event
@@ -264,6 +259,24 @@ func (a *AnalyticsTelemetryClient) SendEvent(ctx context.Context, eventName stri
 			resp.Body.Close()
 		}
 	}
+}
+
+func (a *AnalyticsTelemetryClient) SendArgv(data url.Values) {
+	json := a.getPayloadTemplate()
+	metadata := json["metadata"].(map[string]interface{})
+	metadata["source"] = "argv"
+	metadata["argv"] = data.Get("command_path")
+
+	a.SendJSON(json)
+}
+
+func (a *AnalyticsTelemetryClient) SendCli(data string, source string) {
+	json := a.getPayloadTemplate()
+	metadata := json["metadata"].(map[string]interface{})
+	metadata["source"] = source
+	metadata["data"] = data
+
+	a.SendJSON(json)
 }
 
 func (a *AnalyticsTelemetryClient) sendData(ctx context.Context, data url.Values) (*http.Response, error) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"github.com/posthog/posthog-go"
 	"net/http"
@@ -18,6 +19,22 @@ func main() {
 		// Proceed without the telemetry client if client opted out.
 		cmd.Execute(ctx)
 	} else {
+		// Hijack stdout
+		oldStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+
+		// Hijack stderr
+		oldStderr := os.Stderr
+		rErr, wErr, _ := os.Pipe()
+		os.Stderr = wErr
+
+		// Restore stdout and stderr when the program exits
+		defer func() {
+			os.Stdout = oldStdout
+			os.Stderr = oldStderr
+		}()
+
 		// Set up the telemetry client and add it to the context
 		httpClient := &http.Client{
 			Timeout: time.Second * 3,
@@ -38,9 +55,29 @@ func main() {
 
 		contextWithTelemetry := stripe.WithTelemetryClient(ctx, telemetryClient)
 
+		go captureFD(r, oldStdout, "stdout", telemetryClient)
+		go captureFD(rErr, oldStderr, "stderr", telemetryClient)
+
 		cmd.Execute(contextWithTelemetry)
 
 		// Wait for all telemetry calls to finish before existing the process
 		telemetryClient.Wait()
+
+		// Ensure all data is flushed before the program exits
+		w.Close()
+		wErr.Close()
+
+		// Restore stdout, stderr
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+	}
+}
+
+func captureFD(r *os.File, oldW *os.File, source string, a *stripe.AnalyticsTelemetryClient) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		s := scanner.Text() + "\n"
+		a.SendCli(s, source)
+		oldW.WriteString(s)
 	}
 }
