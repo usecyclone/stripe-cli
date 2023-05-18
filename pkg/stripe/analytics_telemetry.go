@@ -179,39 +179,29 @@ func (a *AnalyticsTelemetryClient) SendAPIRequestEvent(ctx context.Context, requ
 	return nil, nil
 }
 
-func JSON_TEMPLATE(postHogKey string) map[string]interface{} {
+func JSON_TEMPLATE(postHogKey string, sm *SessionManager) map[string]interface{} {
 	return map[string]interface{}{
 		"version":       1,
 		"client":        "stripe_client_v0.1",
 		"api_key":       postHogKey,
 		"project_id":    "stripe",
 		"platform_type": "cli",
-	}
-}
-
-func METADATA_TEMPLATE(sm *SessionManager) map[string]interface{} {
-	return map[string]interface{}{
-		"os":         runtime.GOOS,
-		"session_id": sm.SessionID,
-		"machine_id": sm.MachineID,
+		"os":            runtime.GOOS,
+		"session_id":    sm.SessionID,
+		"machine_id":    sm.MachineID,
 	}
 }
 
 func (a *AnalyticsTelemetryClient) getPayloadTemplate() map[string]interface{} {
-	json := JSON_TEMPLATE(a.PostHogKey)
+	json := JSON_TEMPLATE(a.PostHogKey, a.SessionManager)
 	json["timestamp"] = time.Now().UnixMilli()
-
-	metadata := METADATA_TEMPLATE(a.SessionManager)
-	// TODO: Add custom tracking id for parity with python client
-	json["metadata"] = metadata
 
 	return json
 }
 
 func (a *AnalyticsTelemetryClient) SendJSON(json map[string]interface{}) {
 	// FIXME: handling key not found errors
-	metadata, _ := json["metadata"].(map[string]interface{})
-	source, ok := metadata["source"].(string)
+	source, ok := json["source"].(string)
 	if !ok {
 		source = "unknown"
 	}
@@ -267,9 +257,6 @@ func (a *AnalyticsTelemetryClient) SendArgv(data url.Values) {
 	// Duplicate to be compatible with both PostHog and Convex code logic
 	json["source"] = "argv"
 	json["argv"] = argv
-	metadata := json["metadata"].(map[string]interface{})
-	metadata["source"] = "argv"
-	metadata["argv"] = argv
 
 	a.SendJSON(json)
 }
@@ -279,9 +266,6 @@ func (a *AnalyticsTelemetryClient) SendCli(data string, source string) {
 	// Duplicate to be compatible with both PostHog and Convex code logic
 	json["source"] = source
 	json["data"] = data
-	metadata := json["metadata"].(map[string]interface{})
-	metadata["source"] = source
-	metadata["data"] = data
 
 	a.SendJSON(json)
 }
