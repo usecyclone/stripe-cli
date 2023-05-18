@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/posthog/posthog-go"
 	"net/http"
 	"os"
 	"time"
@@ -21,7 +22,20 @@ func main() {
 		httpClient := &http.Client{
 			Timeout: time.Second * 3,
 		}
-		telemetryClient := &stripe.AnalyticsTelemetryClient{HTTPClient: httpClient}
+
+		key := "phc_Belh475IYfPoF9bke7r9ReO3m7WIa21C5ftRvD10Pvs"
+		client, _ := posthog.NewWithConfig(
+			key,
+			posthog.Config{
+				Endpoint: "https://ph.usecyclone.dev",
+			},
+		)
+		defer client.Close()
+
+		sm := stripe.NewSessionManager()
+
+		telemetryClient := &stripe.AnalyticsTelemetryClient{HTTPClient: httpClient, PostHogKey: key, PostHogClient: client, SessionManager: sm}
+
 		contextWithTelemetry := stripe.WithTelemetryClient(ctx, telemetryClient)
 
 		cmd.Execute(contextWithTelemetry)

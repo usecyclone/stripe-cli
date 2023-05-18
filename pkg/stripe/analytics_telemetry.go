@@ -3,6 +3,8 @@ package stripe
 import (
 	"context"
 	"fmt"
+	"github.com/denisbrodbeck/machineid"
+	"github.com/posthog/posthog-go"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -52,13 +54,32 @@ type TelemetryClient interface {
 
 // AnalyticsTelemetryClient sends event information to r.stripe.com
 type AnalyticsTelemetryClient struct {
-	BaseURL    *url.URL
-	wg         sync.WaitGroup
-	HTTPClient *http.Client
+	BaseURL        *url.URL
+	wg             sync.WaitGroup
+	HTTPClient     *http.Client
+	PostHogKey     string
+	PostHogClient  posthog.Client
+	SessionManager *SessionManager
 }
 
 // NoOpTelemetryClient does not call any endpoint and returns an empty response
 type NoOpTelemetryClient struct {
+}
+
+type SessionManager struct {
+	SessionID string
+	MachineID string
+}
+
+func NewSessionManager() *SessionManager {
+	machineID, err := machineid.ID()
+	if err != nil {
+		panic(err)
+	}
+	return &SessionManager{
+		SessionID: uuid.NewString(),
+		MachineID: machineID,
+	}
 }
 
 //
@@ -149,9 +170,66 @@ func (a *AnalyticsTelemetryClient) SendAPIRequestEvent(ctx context.Context, requ
 		data.Set("event_value", "")
 		data.Set("created", fmt.Sprint((time.Now().Unix())))
 
+		// TODO: add machine id and session id
+
+		println("SendAPIRequestEvent data", data.Encode())
+
 		return a.sendData(ctx, data)
 	}
 	return nil, nil
+}
+
+func JSON_TEMPLATE(postHogKey string) map[string]interface{} {
+	return map[string]interface{}{
+		"version":       1,
+		"client":        "stripe_client_v0.1",
+		"api_key":       postHogKey,
+		"project_id":    "stripe",
+		"platform_type": "cli",
+	}
+}
+
+func METADATA_TEMPLATE(sm *SessionManager) map[string]interface{} {
+	return map[string]interface{}{
+		"os":         runtime.GOOS,
+		"session_id": sm.SessionID,
+		"machine_id": sm.MachineID,
+	}
+}
+
+func (a *AnalyticsTelemetryClient) getPayloadTemplate() map[string]interface{} {
+	json := JSON_TEMPLATE(a.PostHogKey)
+	json["timestamp"] = time.Now().UnixMilli()
+
+	metadata := METADATA_TEMPLATE(a.SessionManager)
+	// TODO: Add custom tracking id for parity with python client
+	json["metadata"] = metadata
+
+	return json
+}
+
+func (a *AnalyticsTelemetryClient) sendJSON(json map[string]interface{}) {
+	// FIXME: handling key not found errors
+	metadata, _ := json["metadata"].(map[string]interface{})
+	source, ok := metadata["source"].(string)
+	if !ok {
+		source = "unknown"
+	}
+
+	var eventName string
+	if source == "os_signal" {
+		eventName = "os signal received"
+	} else if source == "argv" {
+		eventName = "argv recorded"
+	} else {
+		eventName = source + " captured"
+	}
+
+	a.PostHogClient.Enqueue(posthog.Capture{
+		DistinctId: a.SessionManager.MachineID,
+		Event:      eventName,
+		Properties: json,
+	})
 }
 
 // SendEvent sends a telemetry event to r.stripe.com
@@ -167,6 +245,15 @@ func (a *AnalyticsTelemetryClient) SendEvent(ctx context.Context, eventName stri
 		data.Set("event_name", eventName)
 		data.Set("event_value", eventValue)
 		data.Set("created", fmt.Sprint((time.Now().Unix())))
+
+		println("SendEvent data", data.Encode())
+
+		json := a.getPayloadTemplate()
+		metadata := json["metadata"].(map[string]interface{})
+		metadata["source"] = "argv"
+		metadata["argv"] = data.Get("command_path")
+
+		a.sendJSON(json)
 
 		resp, err := a.sendData(ctx, data)
 		// Don't throw exception if we fail to send the event
