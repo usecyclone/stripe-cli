@@ -76,8 +76,8 @@ func main() {
 func captureFD(r *os.File, oldW *os.File, source string, a *stripe.AnalyticsTelemetryClient) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		s := scanner.Text() + "\n"
+		s := scanner.Text()
 		a.SendCli(s, source)
-		oldW.WriteString(s)
+		oldW.WriteString(s + "\n")
 	}
 }
