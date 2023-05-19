@@ -234,8 +234,6 @@ func (a *AnalyticsTelemetryClient) SendEvent(ctx context.Context, eventName stri
 		data.Set("event_value", eventValue)
 		data.Set("created", fmt.Sprint((time.Now().Unix())))
 
-		println("SendEvent data", data.Encode())
-
 		a.SendArgv(data)
 
 		resp, err := a.sendData(ctx, data)
