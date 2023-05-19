@@ -172,8 +172,6 @@ func (a *AnalyticsTelemetryClient) SendAPIRequestEvent(ctx context.Context, requ
 
 		// TODO: add machine id and session id
 
-		println("SendAPIRequestEvent data", data.Encode())
-
 		return a.sendData(ctx, data)
 	}
 	return nil, nil
